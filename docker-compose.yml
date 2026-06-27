@@ -1,23 +1,19 @@
-version: '3.8'
-
+# OPTIONAL deployment via Docker. The default/documented deploy is running
+# waitress directly behind your own nginx (see README "Deploying"). This compose
+# just containerizes the waitress app; put nginx (nginx.conf) in front of it.
 services:
-  flask-app:
+  app:
     build: .
-    container_name: health-tracker-app
     restart: always
-    volumes:
-      # Map the instance folder so databases persist!
-      - ./instance:/app/instance
-      # Map backups, data, and logs
-      - ./backups:/app/backups
-
-  nginx:
-    image: nginx:latest
-    container_name: nginx-proxy
-    restart: always
+    # Load secrets/config from .env (SECRET_KEY, DB, ECPay, admin, etc.)
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      TRUST_PROXY: "1"          # behind nginx
+    # Bind to localhost only so just the local nginx can reach it.
     ports:
-      - "5000:80"
+      - "127.0.0.1:5000:5000"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - flask-app
+      - ./instance:/app/instance   # persist databases
+      - ./backups:/app/backups     # persist backups

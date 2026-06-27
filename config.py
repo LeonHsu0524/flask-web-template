@@ -47,6 +47,13 @@ class Config:
     SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", False)  # True in prod (HTTPS)
     PERMANENT_SESSION_LIFETIME = int(os.getenv("PERMANENT_SESSION_LIFETIME", "86400"))
 
+    # ---- Reverse proxy -----------------------------------------------------
+    # When the app runs behind nginx (or any proxy), enable this so Flask honors
+    # X-Forwarded-Proto/For/Host: HTTPS detection (Secure cookies + correct
+    # external URLs) and the real client IP (for rate limiting). Off by default
+    # (direct/local); on in production. See ProxyFix in app.create_app().
+    TRUST_PROXY = _bool("TRUST_PROXY", False)
+
     # ===== DATABASE =========================================================
     # To change which database the server uses, edit DATABASE_URL in your .env
     # (or this default). Examples:
@@ -136,6 +143,8 @@ class ProductionConfig(Config):
     DEBUG = False
     # Require HTTPS for the session cookie in production (override via env if needed).
     SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", True)
+    # Production runs behind nginx -> trust forwarded headers (override via env).
+    TRUST_PROXY = _bool("TRUST_PROXY", True)
 
 
 class TestingConfig(Config):

@@ -1,5 +1,5 @@
-# Use Python 3.14 runtime
-FROM python:3.14-slim
+# Use Python 3.12 runtime
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app

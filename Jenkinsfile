@@ -47,7 +47,7 @@ pipeline {
             when { expression { params.TEST_LEVEL in ['smoke', 'full'] } }
             steps {
                 echo 'Running smoke tests...'
-                sh 'docker compose exec -T flask-app python -m pytest -m smoke -q'
+                sh 'docker compose exec -T app python -m pytest -m smoke -q'
             }
         }
 
@@ -63,7 +63,7 @@ pipeline {
             when { expression { params.TEST_LEVEL == 'full' } }
             steps {
                 echo 'Running integration tests...'
-                sh 'docker compose exec -T flask-app python -m pytest -m integration -q'
+                sh 'docker compose exec -T app python -m pytest -m integration -q'
             }
         }
 

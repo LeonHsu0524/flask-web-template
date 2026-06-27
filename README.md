@@ -294,18 +294,34 @@ Add tests in `tests/`, tagging each with the right `pytestmark`.
 
 ---
 
-## 9. Production & Docker
+## 9. Deploying
 
+Set real values in `.env` first — it is **loaded automatically** (`python-dotenv`).
+> Tip: create it with `cp .env.example .env` (don't use PowerShell `Out-File`, which
+> adds a BOM that breaks the first line).
+
+### Option 1 — waitress behind nginx (recommended default)
+
+1. Run the app in production mode (serves via **waitress**):
+   ```bash
+   APP_ENV=production python app.py          # Linux/macOS
+   # set APP_ENV=production && python app.py # Windows
+   ```
+   In production, `TRUST_PROXY` is on, so the app honors `X-Forwarded-Proto/For`
+   from nginx — HTTPS detection (Secure cookies), correct external URLs, and real
+   client IPs all work.
+2. Put **nginx** in front to terminate HTTPS. `nginx.conf` is a ready template:
+   it redirects 80→443, terminates TLS (point `ssl_certificate*` at your certs),
+   and proxies to `127.0.0.1:5000` with `X-Forwarded-Proto`. For HTTP-only local
+   testing, use the commented fallback block and set `SESSION_COOKIE_SECURE=false`.
+
+### Option 2 — Docker (optional)
+
+`docker-compose.yml` containerizes the waitress app (binds `127.0.0.1:5000`, loads
+`.env`, persists `instance/` + `backups/`). Put nginx in front the same way.
 ```bash
-# Production locally (uses waitress, not the dev server)
-set APP_ENV=production && python app.py        # Windows
-
-# Or with Docker (compose runs app + nginx, app already in production mode)
 docker compose up -d --build
 ```
-
-`nginx.conf` proxies the public port to the app. Set real values in `.env`
-before deploying (see `SECRETS.md`).
 
 ---
 

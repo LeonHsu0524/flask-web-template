@@ -13,10 +13,12 @@ waitress==3.0.0
 Flask-WTF==1.2.1
 Flask-Limiter==3.5.0
 
+# Config: auto-load .env
+python-dotenv==1.0.1
+
 # Tests
 pytest==8.1.1
 
-# Optional:
-#   python-dotenv==1.0.1   # auto-load .env in development
-#   psycopg2-binary==2.9.9 # PostgreSQL driver (see SECRETS.md)
-#   PyMySQL==1.1.0         # MySQL driver (see SECRETS.md)
+# Optional database drivers (see SECRETS.md):
+#   psycopg2-binary==2.9.9 # PostgreSQL driver
+#   PyMySQL==1.1.0         # MySQL driver

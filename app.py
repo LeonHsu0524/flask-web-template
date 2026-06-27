@@ -824,6 +824,12 @@ def create_app(config_name: str | None = None) -> Flask:
     app = Flask(__name__)
     app.config.from_object(get_config(config_name))
 
+    # Behind a reverse proxy (nginx), honor X-Forwarded-Proto/For/Host so HTTPS
+    # detection (Secure cookies, external URLs) and real client IPs work.
+    if app.config.get("TRUST_PROXY", False):
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
     db.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)
