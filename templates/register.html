@@ -25,15 +25,23 @@
         h2 { text-align: center; color: #333; margin-bottom: 20px; }
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; color: #666; font-weight: 500;}
-        .form-group input {
+        .form-group input, .form-group select {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 5px;
             box-sizing: border-box;
             font-size: 14px;
+            background-color: white;
         }
-        .form-group input:focus { border-color: #007bff; outline: none; }
+        .form-group input:focus, .form-group select:focus { border-color: #007bff; outline: none; }
+        fieldset.address {
+            border: 1px solid #e3e6ea;
+            border-radius: 8px;
+            padding: 12px 14px 4px;
+            margin: 0 0 15px;
+        }
+        fieldset.address legend { font-size: 13px; color: #666; font-weight: 600; padding: 0 6px; }
         
         .btn-register {
             width: 100%;
@@ -106,6 +114,55 @@
                 <input type="text" name="phone" placeholder="09xx-xxx-xxx">
             </div>
 
+            {% if config.REGISTER_COLLECT_BIRTHDAY %}
+            <div class="form-group">
+                <label>生日 Birthday
+                    {% if not config.REGISTER_BIRTHDAY_REQUIRED %}<span class="optional">選填</span>{% endif %}
+                </label>
+                <input type="date" name="birthday" max="{{ today }}"
+                       {{ 'required' if config.REGISTER_BIRTHDAY_REQUIRED }}>
+            </div>
+            {% endif %}
+
+            {% if config.REGISTER_COLLECT_ADDRESS %}
+            <fieldset class="address">
+                <legend>地址 Address{% if not config.REGISTER_ADDRESS_REQUIRED %} (選填){% endif %}</legend>
+                <div class="form-group">
+                    <label>國家/地區 Country</label>
+                    <select id="addr-country" name="country"
+                            data-vendor-base="{{ url_for('static', filename='vendor') }}"
+                            {{ 'required' if config.REGISTER_ADDRESS_REQUIRED }}>
+                        <option value="">載入中… Loading</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>州/省/縣市 State / County</label>
+                    <select id="addr-state" name="state">
+                        <option value="">—</option>
+                    </select>
+                </div>
+                <div class="form-group" id="addr-district-group" style="display:none;">
+                    <label>鄉鎮市區 District</label>
+                    <select id="addr-district" name="district">
+                        <option value="">—</option>
+                    </select>
+                </div>
+                <div class="form-group" id="addr-city-group" style="display:none;">
+                    <label>城市 City</label>
+                    <input type="text" id="addr-city" name="city" placeholder="City">
+                </div>
+                <div class="form-group">
+                    <label>郵遞區號 Zip code</label>
+                    <input type="text" id="addr-zipcode" name="zipcode" placeholder="郵遞區號">
+                </div>
+                <div class="form-group">
+                    <label>詳細地址 Street</label>
+                    <input type="text" id="addr-street" name="street" placeholder="路 / 巷 / 號 / 樓"
+                           {{ 'required' if config.REGISTER_ADDRESS_REQUIRED }}>
+                </div>
+            </fieldset>
+            {% endif %}
+
             <button type="submit" class="btn-register">立即註冊</button>
         </form>
 
@@ -114,5 +171,8 @@
         </div>
     </div>
 
+    {% if config.REGISTER_COLLECT_ADDRESS %}
+    <script src="{{ url_for('static', filename='js/address-form.js') }}"></script>
+    {% endif %}
 </body>
 </html>

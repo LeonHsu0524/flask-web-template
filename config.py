@@ -129,6 +129,17 @@ class Config:
     RESET_TOKEN_MAX_AGE = int(os.getenv("RESET_TOKEN_MAX_AGE", "3600"))
     API_TOKEN_MAX_AGE = int(os.getenv("API_TOKEN_MAX_AGE", "2592000"))  # 30 days
 
+    # ---- Registration fields (optional, config-gated) ----------------------
+    # Address picker (cascading country/state dropdowns + Taiwan 縣市/鄉鎮市區
+    # with auto zipcode, powered by vendored data in static/vendor/) and a
+    # birthday calendar field. Each field: COLLECT toggles whether it is shown
+    # at all; REQUIRED toggles whether it is mandatory when shown. Both apply to
+    # the web form and the JSON /api/register.
+    REGISTER_COLLECT_ADDRESS = _bool("REGISTER_COLLECT_ADDRESS", True)
+    REGISTER_ADDRESS_REQUIRED = _bool("REGISTER_ADDRESS_REQUIRED", False)
+    REGISTER_COLLECT_BIRTHDAY = _bool("REGISTER_COLLECT_BIRTHDAY", True)
+    REGISTER_BIRTHDAY_REQUIRED = _bool("REGISTER_BIRTHDAY_REQUIRED", False)
+
     # ---- Default admin (seeded on first run) -------------------------------
     # On startup, if no account with this username exists, one is auto-created
     # so a fresh deploy has a working admin. CHANGE THE PASSWORD after first

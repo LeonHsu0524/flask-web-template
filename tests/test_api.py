@@ -20,6 +20,55 @@ def test_login_bad_credentials(client):
     assert r.status_code == 401
 
 
+# ---- optional registration fields: address + birthday ---------------------
+def test_register_stores_address_and_birthday(client, app):
+    r = client.post("/api/register", json={
+        "username": "dave", "password": "secret1",
+        "birthday": "1990-05-20",
+        "address": {"country": "Taiwan", "state": "臺北市", "district": "中正區",
+                    "zipcode": "100", "street": "重慶南路一段122號"},
+    })
+    assert r.status_code == 201
+    from models import SystemUser
+    from datetime import date
+    with app.app_context():
+        u = SystemUser.query.filter_by(username="dave").first()
+        assert u.address["zipcode"] == "100"
+        assert u.address["country"] == "Taiwan"
+        assert u.birthday == date(1990, 5, 20)
+
+
+def test_address_required_rejects_when_missing(client, app):
+    app.config["REGISTER_ADDRESS_REQUIRED"] = True
+    r = client.post("/api/register", json={"username": "eve", "password": "secret1"})
+    assert r.status_code == 400
+
+
+def test_birthday_required_rejects_when_missing(client, app):
+    app.config["REGISTER_BIRTHDAY_REQUIRED"] = True
+    r = client.post("/api/register", json={"username": "fred", "password": "secret1"})
+    assert r.status_code == 400
+
+
+def test_birthday_rejects_future_or_malformed(client, app):
+    assert client.post("/api/register", json={
+        "username": "gail", "password": "secret1", "birthday": "2999-01-01"}).status_code == 400
+    assert client.post("/api/register", json={
+        "username": "gail2", "password": "secret1", "birthday": "not-a-date"}).status_code == 400
+
+
+def test_collect_off_ignores_address(client, app):
+    app.config["REGISTER_COLLECT_ADDRESS"] = False
+    app.config["REGISTER_ADDRESS_REQUIRED"] = True  # ignored because collect is off
+    r = client.post("/api/register", json={
+        "username": "hank", "password": "secret1",
+        "address": {"country": "Taiwan", "street": "x"}})
+    assert r.status_code == 201
+    from models import SystemUser
+    with app.app_context():
+        assert SystemUser.query.filter_by(username="hank").first().address is None
+
+
 def test_save_rejected_without_key(client):
     r = client.post("/save", json={"userInfo": {"userID": "U1", "name": "Bob"}})
     assert r.status_code == 401

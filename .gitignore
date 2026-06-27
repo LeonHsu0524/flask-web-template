@@ -19,3 +19,5 @@ AWS-KEY.pem
 # Tooling
 .pytest_cache/
 ngrok.exe
+.claude/
+node_modules/

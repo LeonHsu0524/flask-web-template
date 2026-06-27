@@ -11,7 +11,7 @@ import logging
 import os
 import shutil
 import smtplib
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
 from zoneinfo import ZoneInfo
@@ -314,6 +314,56 @@ bp = Blueprint("main", __name__)
 
 
 # ---- Account: register ----------------------------------------------------
+# Optional, config-gated registration fields (address + birthday). The helpers
+# below are shared by the web form and the JSON API so the rules stay identical.
+_ADDRESS_FIELDS = ("country", "state", "city", "district", "zipcode", "street")
+
+
+def build_address(src):
+    """Pull the address fields from a form/dict into a clean dict (or None).
+
+    `src` is request.form (web) or a dict (JSON: either a nested "address"
+    object or flat keys). Returns a dict of the non-empty fields, or None if
+    nothing was provided.
+    """
+    if isinstance(src, dict) and isinstance(src.get("address"), dict):
+        src = src["address"]
+    out = {}
+    for key in _ADDRESS_FIELDS:
+        val = (src.get(key) or "").strip() if hasattr(src, "get") else ""
+        if val:
+            out[key] = val
+    return out or None
+
+
+def address_ok(addr):
+    """An address counts as provided if at least country + street are present."""
+    return bool(addr and addr.get("country") and addr.get("street"))
+
+
+@bp.app_context_processor
+def _inject_today():
+    """Expose today's date (ISO) to templates, e.g. the birthday picker's max."""
+    return {"today": get_now().date().isoformat()}
+
+
+def parse_birthday(value):
+    """Parse a 'YYYY-MM-DD' string to a date. Returns (date|None, error|None).
+
+    Empty input -> (None, None). Malformed or future dates -> (None, message).
+    """
+    value = (value or "").strip()
+    if not value:
+        return None, None
+    try:
+        bday = date.fromisoformat(value)
+    except ValueError:
+        return None, "生日格式不正確"
+    if bday > get_now().date():
+        return None, "生日不能是未來日期"
+    return bday, None
+
+
 @bp.route("/api/register", methods=["POST"])
 def api_register():
     data = request.json or {}
@@ -326,6 +376,18 @@ def api_register():
 
     role = "user"
     linked_userid = data.get("linked_userid")
+
+    cfg = current_app.config
+    address = build_address(data) if cfg["REGISTER_COLLECT_ADDRESS"] else None
+    if cfg["REGISTER_COLLECT_ADDRESS"] and cfg["REGISTER_ADDRESS_REQUIRED"] and not address_ok(address):
+        return jsonify({"message": "Address is required", "status": "fail"}), 400
+
+    birthday = None
+    if cfg["REGISTER_COLLECT_BIRTHDAY"]:
+        birthday, bday_err = parse_birthday(data.get("birthday"))
+        if bday_err or (cfg["REGISTER_BIRTHDAY_REQUIRED"] and birthday is None):
+            return jsonify({"message": bday_err or "Birthday is required", "status": "fail"}), 400
+
     try:
         user = SystemUser(
             username=username,
@@ -334,6 +396,8 @@ def api_register():
             phone=data.get("phone"),
             linked_userid=linked_userid,
             role=role,
+            address=address,
+            birthday=birthday,
         )
         user.set_password(password)
         db.session.add(user)
@@ -382,9 +446,24 @@ def web_register_action():
         return render_template("register.html", error="兩次密碼輸入不一致")
     if SystemUser.query.filter_by(username=username).first():
         return render_template("register.html", error="該帳號已被使用")
+
+    cfg = current_app.config
+    address = build_address(request.form) if cfg["REGISTER_COLLECT_ADDRESS"] else None
+    if cfg["REGISTER_COLLECT_ADDRESS"] and cfg["REGISTER_ADDRESS_REQUIRED"] and not address_ok(address):
+        return render_template("register.html", error="請填寫地址（至少國家與詳細地址）")
+
+    birthday = None
+    if cfg["REGISTER_COLLECT_BIRTHDAY"]:
+        birthday, bday_err = parse_birthday(request.form.get("birthday"))
+        if bday_err:
+            return render_template("register.html", error=bday_err)
+        if cfg["REGISTER_BIRTHDAY_REQUIRED"] and birthday is None:
+            return render_template("register.html", error="請選擇生日")
+
     try:
         user = SystemUser(username=username, name=name, role=role,
-                          linked_userid=None, email=email, phone=phone)
+                          linked_userid=None, email=email, phone=phone,
+                          address=address, birthday=birthday)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()

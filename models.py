@@ -1,7 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import PrimaryKeyConstraint, ForeignKeyConstraint
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
@@ -23,6 +23,10 @@ class SystemUser(db.Model):
     phone: Mapped[str | None] = mapped_column(db.String(20))
     vip_expires_at: Mapped[datetime | None] = mapped_column(db.DateTime(timezone=True))
     linked_userid: Mapped[str | None] = mapped_column(db.String(50))
+    # Optional registration fields (config-gated). address is a generic JSON blob
+    # holding {country, state, city, district, zipcode, street}; birthday is a date.
+    address: Mapped[dict | None] = mapped_column(db.JSON)
+    birthday: Mapped[date | None] = mapped_column(db.Date)
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)

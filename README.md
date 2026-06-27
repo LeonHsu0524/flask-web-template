@@ -153,6 +153,28 @@ them as `url_for('main.<function>')`.
 | `/api/register` | POST (JSON) | Register from an app/client |
 | `/register` | POST (JSON) | Minimal username+password register |
 
+**Optional fields — address & birthday.** The register form can also collect a
+structured address and a birthday, each independently controlled by config:
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `REGISTER_COLLECT_ADDRESS` | `true` | Show the address section |
+| `REGISTER_ADDRESS_REQUIRED` | `false` | Make the address mandatory |
+| `REGISTER_COLLECT_BIRTHDAY` | `true` | Show the birthday field |
+| `REGISTER_BIRTHDAY_REQUIRED` | `false` | Make the birthday mandatory |
+
+The address uses **cascading dropdowns** — country → state/province worldwide
+(`country-state-city`), and for Taiwan, 縣市 → 鄉鎮市區 with the **zip code
+auto-filled** (`twzipcode-data`) — plus a free-text street line. The birthday uses
+a native calendar picker (`<input type="date">`). Both flags apply to the web form
+and the JSON `/api/register` (which accepts a nested `address` object and a
+`birthday` string). The address is stored as JSON in `SystemUser.address`; the
+birthday in `SystemUser.birthday`.
+
+The dropdown data is **vendored** under `static/vendor/` (no external network at
+runtime). To refresh it, re-run the vendor step in `static/vendor/README` *(see
+below)*.
+
 ### b) Login / session / token
 | Route | Method | Purpose |
 |-------|--------|---------|
