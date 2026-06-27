@@ -77,7 +77,7 @@ tables.
 > **Default admin (auto-created):** on first run the app seeds an admin account so
 > a fresh deploy is never locked out. Defaults (override in `.env`):
 > `username = admin`, `password = admin12345`, `role = superadmin`.
-> **⚠️ Change the password immediately**, or set `DEFAULT_ADMIN_*` in `.env`, or
+> **Change the password immediately**, set `DEFAULT_ADMIN_*` in `.env`, or
 > turn it off with `DEFAULT_ADMIN_ENABLED=false`.
 >
 > **Create/promote more admins** any time with the bundled helper — any
@@ -89,7 +89,7 @@ tables.
 > ```
 >
 > Registration via the website always creates a plain `user`; promote them from
-> the admin panel (**帳號管理**).
+> the account management panel.
 
 ---
 
@@ -104,7 +104,7 @@ All settings live in **`config.py`** and are read from environment variables
 | `production`    | **waitress** (Windows + Linux) | real deployment |
 | `testing`       | in-memory, fast | automated tests |
 
-### Switching the database (your request #4)
+### Switching the database
 Edit **one line** — `DATABASE_URL` in `.env`:
 
 ```
@@ -122,7 +122,7 @@ For Postgres/MySQL, uncomment the matching driver in `requirements.txt`
 
 ---
 
-## 4. The application factory (your request #5)
+## 4. The application factory
 
 The app is built by a **factory function**, so you can import it as a module
 (for tests or another script) instead of running the whole system:
@@ -192,7 +192,7 @@ them as `url_for('main.<function>')`.
 | `/delete_user/<id>/<name>` | Delete a person + their records |
 | `/personal` | The logged-in user's own profile + records |
 
-### g) Protected external data API (your request: who/what can GET/POST)
+### g) Protected external data API
 | Route | Method | Purpose |
 |-------|--------|---------|
 | `/save` | POST | Receive data from an outside client |
@@ -296,9 +296,10 @@ Add tests in `tests/`, tagging each with the right `pytestmark`.
 
 ## 9. Deploying
 
-Set real values in `.env` first — it is **loaded automatically** (`python-dotenv`).
-> Tip: create it with `cp .env.example .env` (don't use PowerShell `Out-File`, which
-> adds a BOM that breaks the first line).
+Set real values in `.env` first — it is loaded automatically (`python-dotenv`).
+Create it by copying the example: `cp .env.example .env` (on Windows, `copy`).
+Avoid creating it with PowerShell `Out-File`/`>`, which prepends a UTF-8 BOM that
+corrupts the first line; use a text editor or the copy command above.
 
 ### Option 1 — waitress behind nginx (recommended default)
 

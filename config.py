@@ -75,11 +75,15 @@ class Config:
     RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "30"))
 
     # ---- ECPay (payment) ---------------------------------------------------
-    # Test credentials by default. Swap for official ones in .env when going
-    # live (see SECRETS.md). The payment action URL also switches there.
-    ECPAY_MERCHANT_ID = os.getenv("ECPAY_MERCHANT_ID", "3488647")
-    ECPAY_HASH_KEY = os.getenv("ECPAY_HASH_KEY", "emrwOPa0cvFjvCbO")
-    ECPAY_HASH_IV = os.getenv("ECPAY_HASH_IV", "jIabjrgpY2LLXZFj")
+    # Defaults are ECPay's OFFICIAL public SANDBOX merchant (2000132). This trio
+    # is the only one that works against the stage endpoint below, so payments
+    # work out of the box for testing. Swap for your own official credentials in
+    # .env when going live -- AND switch ECPAY_ACTION_URL to the live URL too:
+    # a production MerchantID sent to the stage URL (or vice versa) fails with
+    # "10200074 找不到加密金鑰" (encryption key not found). See SECRETS.md.
+    ECPAY_MERCHANT_ID = os.getenv("ECPAY_MERCHANT_ID", "2000132")
+    ECPAY_HASH_KEY = os.getenv("ECPAY_HASH_KEY", "5294y06JbISpM5x9")
+    ECPAY_HASH_IV = os.getenv("ECPAY_HASH_IV", "v77hoKGq4kWxNNIS")
     # Default to the SANDBOX/stage endpoint (safe). Switch to the live URL in .env
     # when going live: https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5
     ECPAY_ACTION_URL = os.getenv(

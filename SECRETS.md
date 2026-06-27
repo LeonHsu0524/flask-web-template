@@ -10,7 +10,9 @@ out of the box. Copy `.env.example` → `.env` and edit before deploying.
 
 ## 1. ECPay payment credentials
 
-Currently using ECPay **test** credentials. To accept real payments:
+The defaults are ECPay's official public **sandbox** credentials (merchant
+`2000132`), paired with the sandbox action URL, so test checkout works out of the
+box. To accept real payments:
 
 1. Get your official `MerchantID`, `HashKey`, `HashIV` from the ECPay merchant
    portal (https://vendor.ecpay.com.tw/).
@@ -22,13 +24,17 @@ Currently using ECPay **test** credentials. To accept real payments:
    ECPAY_ACTION_URL=https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5
    PUBLIC_BASE_URL=https://your-public-domain
    ```
-   - Test/staging action URL: `https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5`
 3. `PUBLIC_BASE_URL` must be reachable from the internet (domain or ngrok) so
    ECPay can POST to `/payment/notify` and `/payment/result`.
 
-> Reference: the ECPay API Skill is installed at `~/.claude/skills/ecpay`
-> (guides, API references, and encryption test-vectors) to validate the
-> CheckMacValue / encryption wiring.
+| Environment | MerchantID / HashKey / HashIV | Action URL |
+|-------------|-------------------------------|------------|
+| Sandbox (default) | `2000132` / `5294y06JbISpM5x9` / `v77hoKGq4kWxNNIS` | `https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5` |
+| Production | your official credentials | `https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5` |
+
+> **Important:** the MerchantID and the action URL must belong to the **same**
+> environment. Mixing them — e.g. a production MerchantID against the sandbox URL —
+> fails with `10200074 找不到加密金鑰` (encryption key not found).
 
 ## 2. AWS key file (`AWS-KEY.pem`)
 
