@@ -20,7 +20,7 @@ config.py         # ALL configuration (env-driven). Edit settings here.
 ecpay_payment_sdk.py   # ECPay payment SDK (third party, leave as-is)
 
 templates/        # HTML pages (Jinja2)
-static/           # CSS / images
+static/           # Your static assets (served at /static); put images in static/images/
 tests/            # Phased pytest suite (smoke / health / api / integration)
 
 .env.example      # Copy to .env and edit for your environment
@@ -32,6 +32,20 @@ nginx.conf        # Reverse proxy
 Jenkinsfile       # CI/CD pipeline (host picker + test phases)
 pytest.ini        # Test markers
 ```
+
+### Static files & images
+
+Drop assets in `static/` (images go in `static/images/`). Flask serves them at
+`/static/...` automatically — no config needed. Reference them in templates with
+`url_for`:
+
+```html
+<img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+```
+
+Outside templates, the URL is just `/static/images/logo.png`. Image files are not
+git-ignored, so they're committed with the repo.
 
 ---
 
