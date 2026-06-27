@@ -93,3 +93,28 @@ Uncomment the matching driver in `requirements.txt` and reinstall.
 `APP_ENV=production` makes `app.py` serve via **waitress** (works on Windows and
 Linux). The Docker image sets this automatically. Behind nginx, no extra change
 is needed (`nginx.conf` proxies to the app).
+
+## 7. Email (optional SMTP for password-reset links)
+
+If `SMTP_HOST` is blank, the password-reset flow just **logs** the reset link
+(dev). To actually email it, set in `.env`:
+
+```
+SMTP_HOST=smtp.yourprovider.com
+SMTP_PORT=587
+SMTP_USER=you@example.com
+SMTP_PASSWORD=app-password
+SMTP_FROM=you@example.com
+SMTP_USE_TLS=true
+```
+
+## 8. Production hardening checklist
+
+- `SECRET_KEY` — set a long random value (app warns at startup if left default).
+- `DEFAULT_ADMIN_PASSWORD` — change it, or set `DEFAULT_ADMIN_ENABLED=false`
+  after you've created your own admin (app warns if left default).
+- `SESSION_COOKIE_SECURE=true` — required when served over HTTPS (default on in
+  `ProductionConfig`).
+- `ECPAY_ACTION_URL` — defaults to the **sandbox**; switch to live + set real
+  ECPay credentials (§1) only when going live.
+- `RATELIMIT_STORAGE_URI` — use `redis://…` if running multiple workers.

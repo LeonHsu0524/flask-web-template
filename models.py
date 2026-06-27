@@ -21,9 +21,6 @@ class SystemUser(db.Model):
     is_vip: Mapped[bool] = mapped_column(default=False)
     email: Mapped[str | None] = mapped_column(db.String(120))
     phone: Mapped[str | None] = mapped_column(db.String(20))
-    height: Mapped[str | None] = mapped_column(db.String(20))
-    weight: Mapped[str | None] = mapped_column(db.String(20))
-    age: Mapped[str | None] = mapped_column(db.String(10))
     vip_expires_at: Mapped[datetime | None] = mapped_column(db.DateTime(timezone=True))
     linked_userid: Mapped[str | None] = mapped_column(db.String(50))
 
@@ -49,13 +46,13 @@ class UserInfo(db.Model):
     __tablename__ = "user_info"
     userID: Mapped[str] = mapped_column(db.String(80))
     name: Mapped[str] = mapped_column(db.String(120))
-    sex: Mapped[int] = mapped_column()
-    age: Mapped[int] = mapped_column()
-    height: Mapped[int] = mapped_column()
-    weight: Mapped[int] = mapped_column()
-    phone: Mapped[str] = mapped_column(db.String(20))
-    device: Mapped[str] = mapped_column(db.String(120))
-    time: Mapped[str] = mapped_column(db.String(120))
+    phone: Mapped[str | None] = mapped_column(db.String(20))
+    device: Mapped[str | None] = mapped_column(db.String(120))
+    time: Mapped[str | None] = mapped_column(db.String(120))
+    # Generic catch-all for any extra per-person attributes, so new fields need
+    # no schema change. Promote a key to a real column anytime with a migration
+    # (see README: "Adding a column").
+    meta: Mapped[dict | None] = mapped_column(db.JSON)
     __table_args__ = (PrimaryKeyConstraint("userID", "name"),)
 
 class UserData(db.Model):

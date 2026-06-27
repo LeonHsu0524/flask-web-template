@@ -18,6 +18,7 @@
             <span class="navbar-brand fw-bold text-primary">個人中心</span>
             <div class="d-flex gap-2">
                 <a href="{{ url_for('main.list_users') }}" class="btn btn-outline-primary btn-sm">資料列表</a>
+                <a href="{{ url_for('main.change_password') }}" class="btn btn-outline-secondary btn-sm">修改密碼</a>
                 {% if is_admin %}
                 <a href="{{ url_for('main.admin_accounts') }}" class="btn btn-outline-dark btn-sm">帳號管理</a>
                 {% endif %}

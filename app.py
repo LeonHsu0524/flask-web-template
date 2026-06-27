@@ -7,11 +7,12 @@ data API. All configuration lives in config.py (env-driven). The app is built
 with an application factory (create_app) so it can be imported as a module and
 tested, not only run as a whole system.
 """
-import hashlib
 import logging
 import os
 import shutil
+import smtplib
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from functools import wraps
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,7 @@ from zoneinfo import ZoneInfo
 import ecpay_payment_sdk
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from flask_migrate import Migrate, upgrade as migrate_upgrade
 from flask import (
     Blueprint,
     Flask,
@@ -76,6 +78,7 @@ else:  # pragma: no cover
     limiter = _NoopExt()
 
 csrf = CSRFProtect() if _HAS_CSRF else _NoopExt()
+migrate = Migrate()
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +208,63 @@ def get_ecpay_sdk():
         )
         current_app.config["_ECPAY_SDK"] = sdk
     return sdk
+
+
+def create_ecpay_order(item_name=None, amount=None, custom_field="", *,
+                       return_path="/payment/notify", result_path="/payment/result"):
+    """
+    Build + sign an ECPay order and return (signed_params, action_url).
+
+    Reusable for ANY payment, not just VIP — pass item_name/amount per call.
+    All changeable defaults (payment methods, encrypt type, default item, action
+    URL) come from config, so behavior is a settings change, not a code change.
+    """
+    cfg = current_app.config
+    base = cfg["PUBLIC_BASE_URL"].rstrip("/")
+    params = {
+        "MerchantTradeNo": f"DX{get_now().strftime('%Y%m%d%H%M%S')}",
+        "MerchantTradeDate": get_now().strftime("%Y/%m/%d %H:%M:%S"),
+        "PaymentType": "aio",
+        "TotalAmount": int(amount if amount is not None else cfg["VIP_PRICE"]),
+        "TradeDesc": cfg.get("ECPAY_TRADE_DESC", "Subscription"),
+        "ItemName": item_name or cfg.get("ECPAY_DEFAULT_ITEM", "Item"),
+        "ReturnURL": f"{base}{return_path}",
+        "OrderResultURL": f"{base}{result_path}",
+        "ChoosePayment": cfg.get("ECPAY_CHOOSE_PAYMENT", "ALL"),
+        "EncryptType": int(cfg.get("ECPAY_ENCRYPT_TYPE", 1)),
+    }
+    if custom_field:
+        params["CustomField1"] = custom_field
+    signed = get_ecpay_sdk().create_order(params)
+    return signed, cfg["ECPAY_ACTION_URL"]
+
+
+# ---------------------------------------------------------------------------
+# Email (optional SMTP; falls back to logging if not configured)
+# ---------------------------------------------------------------------------
+def send_email(to_addr: str, subject: str, body: str) -> bool:
+    """Send an email if SMTP is configured; otherwise log it and return False."""
+    cfg = current_app.config
+    host = cfg.get("SMTP_HOST")
+    if not host or not to_addr:
+        logging.info(f"[EMAIL not sent — SMTP not configured] to={to_addr} :: {subject}\n{body}")
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = cfg.get("SMTP_FROM") or cfg.get("SMTP_USER")
+    msg["To"] = to_addr
+    msg.set_content(body)
+    try:
+        with smtplib.SMTP(host, int(cfg.get("SMTP_PORT", 587)), timeout=10) as s:
+            if cfg.get("SMTP_USE_TLS", True):
+                s.starttls()
+            if cfg.get("SMTP_USER"):
+                s.login(cfg["SMTP_USER"], cfg.get("SMTP_PASSWORD", ""))
+            s.send_message(msg)
+        return True
+    except Exception as e:
+        logging.error(f"Email send failed: {e}")
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -393,9 +453,10 @@ def forgot_password():
         if user:
             token = make_token({"user_id": user.id}, salt="pw-reset")
             reset_url = url_for("main.reset_password", token=token, _external=True)
-            # TODO: email this link to the user. For now log it (dev hook).
+            # Email the link if SMTP is configured; otherwise send_email() logs it (dev hook).
+            send_email(user.email, "Password reset",
+                       f"Use this link to reset your password:\n{reset_url}")
             logging.info(f"[PASSWORD RESET] {username}: {reset_url}")
-            print(f"[PASSWORD RESET] {username}: {reset_url}")
         return render_template("forgot_password.html",
                                message="若該帳號存在，重設連結已寄出（開發模式請看伺服器日誌）。")
     return render_template("forgot_password.html")
@@ -423,6 +484,24 @@ def reset_password(token):
     return render_template("reset_password.html", token=token)
 
 
+@bp.route("/change_password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    user = db.session.get(SystemUser, session["user_id"])
+    if request.method == "POST":
+        current = request.form.get("current_password")
+        new = request.form.get("new_password")
+        confirm = request.form.get("confirm_password")
+        if not user or not user.check_password(current):
+            return render_template("change_password.html", error="目前密碼不正確。")
+        if not new or new != confirm:
+            return render_template("change_password.html", error="兩次新密碼輸入不一致。")
+        user.set_password(new)
+        db.session.commit()
+        return render_template("change_password.html", message="密碼已更新。")
+    return render_template("change_password.html")
+
+
 # ---- Account: profile update (API) ----------------------------------------
 @bp.route("/api/update_profile", methods=["POST"])
 def update_profile():
@@ -430,9 +509,12 @@ def update_profile():
     user = SystemUser.query.filter_by(username=data.get("username")).first()
     if not user:
         return jsonify({"message": "User not found", "status": "fail"}), 404
-    user.height = data.get("height")
-    user.weight = data.get("weight")
-    user.age = data.get("age")
+    if "name" in data:
+        user.name = data.get("name")
+    if "email" in data:
+        user.email = data.get("email")
+    if "phone" in data:
+        user.phone = data.get("phone")
     if data.get("userID"):
         user.linked_userid = data.get("userID")
     db.session.commit()
@@ -444,24 +526,13 @@ def update_profile():
 @login_required
 def pay_vip():
     user = db.session.get(SystemUser, session["user_id"])
-    base = current_app.config["PUBLIC_BASE_URL"].rstrip("/")
-    order_params = {
-        "MerchantTradeNo": f"DX{get_now().strftime('%Y%m%d%H%M%S')}",
-        "MerchantTradeDate": get_now().strftime("%Y/%m/%d %H:%M:%S"),
-        "PaymentType": "aio",
-        "TotalAmount": current_app.config["VIP_PRICE"],
-        "TradeDesc": "Subscription",
-        "ItemName": "Premium_Membership",
-        "ReturnURL": f"{base}/payment/notify",
-        "OrderResultURL": f"{base}/payment/result",
-        "ChoosePayment": "ALL",
-        "EncryptType": 1,
-        "CustomField1": user.username,
-    }
     try:
-        final_params = get_ecpay_sdk().create_order(order_params)
-        return render_template("ecpay_submit.html", params=final_params,
-                               action=current_app.config["ECPAY_ACTION_URL"])
+        params, action = create_ecpay_order(
+            item_name=current_app.config.get("ECPAY_DEFAULT_ITEM", "Premium_Membership"),
+            amount=current_app.config["VIP_PRICE"],
+            custom_field=user.username,
+        )
+        return render_template("ecpay_submit.html", params=params, action=action)
     except Exception as e:
         logging.error(f"ECPay order creation failed: {e}")
         return "Order Creation Failed", 500
@@ -709,15 +780,19 @@ def save_data():
         info["name"] = str(info["name"]).replace(" ", "")
 
         person = UserInfo.query.filter_by(userID=info["userID"], name=info["name"]).first()
-        fields = dict(sex=info.get("sex", 0), age=info.get("age", 0),
-                      height=info.get("height", 0), weight=info.get("weight", 0),
-                      phone=info.get("phone", ""), device=info.get("device", ""),
-                      time=info.get("time", get_now().strftime("%Y-%m-%d %H:%M:%S")))
+        # Core generic person fields; everything else goes into meta (no schema change).
+        core = {"phone": info.get("phone", ""), "device": info.get("device", ""),
+                "time": info.get("time", get_now().strftime("%Y-%m-%d %H:%M:%S"))}
+        extras = {k: v for k, v in info.items()
+                  if k not in ("userID", "name", "phone", "device", "time")}
         if person:
-            for k, v in fields.items():
+            for k, v in core.items():
                 setattr(person, k, v)
+            if extras:
+                person.meta = {**(person.meta or {}), **extras}
         else:
-            person = UserInfo(userID=info["userID"], name=info["name"], **fields)
+            person = UserInfo(userID=info["userID"], name=info["name"],
+                              meta=extras or None, **core)
             db.session.add(person)
 
         # Generic payload: store body["data"] if present, else the whole body.
@@ -750,6 +825,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.config.from_object(get_config(config_name))
 
     db.init_app(app)
+    migrate.init_app(app, db)
     csrf.init_app(app)
     if app.config.get("RATELIMIT_ENABLED", True):
         limiter.init_app(app)
@@ -759,7 +835,18 @@ def create_app(config_name: str | None = None) -> Flask:
         app.jinja_env.globals.setdefault("csrf_token", lambda: "")
 
     app.register_blueprint(bp)
+    _warn_insecure_production(app)
     return app
+
+
+def _warn_insecure_production(app: Flask) -> None:
+    """In production, loudly warn if shipped default secrets are still in place."""
+    if os.getenv("APP_ENV", "development").lower() != "production":
+        return
+    if app.config.get("SECRET_KEY") == "super-secret-key-change-this-in-production":
+        logging.warning("⚠️  SECRET_KEY is still the default — set a strong SECRET_KEY in .env!")
+    if app.config.get("DEFAULT_ADMIN_PASSWORD") == "admin12345":
+        logging.warning("⚠️  DEFAULT_ADMIN_PASSWORD is still the default — change it in .env!")
 
 
 def seed_default_admin(app: Flask) -> None:
@@ -783,9 +870,16 @@ def seed_default_admin(app: Flask) -> None:
 
 def init_runtime(app: Flask, with_scheduler: bool = True) -> None:
     """Side effects that should run only when actually serving (not on import)."""
+    migrations_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "migrations")
     with app.app_context():
-        db.create_all()
-        logging.info("✅ Database tables checked/created")
+        if os.path.isdir(migrations_dir):
+            # Canonical path: apply Alembic migrations (enables easy schema evolution).
+            migrate_upgrade(directory=migrations_dir)
+            logging.info("✅ Database migrations applied (flask db upgrade)")
+        else:
+            # Fallback for a brand-new checkout with no migrations yet.
+            db.create_all()
+            logging.info("✅ Database tables created (db.create_all)")
     seed_default_admin(app)
     os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "static", "data"), exist_ok=True)

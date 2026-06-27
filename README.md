@@ -166,7 +166,7 @@ them as `url_for('main.<function>')`.
 |-------|---------|
 | `/admin/accounts` | List/search accounts |
 | `/admin/create_account` | Create an account |
-| `/admin/edit_account` | Edit role/email/phone/password/shop-owner |
+| `/admin/edit_account` | Edit role/email/phone/password |
 | `/admin/delete_account` | Delete an account |
 | `/admin/update_binding` | Bind an account to a device/product ID |
 
@@ -235,12 +235,29 @@ Requests without a valid key/token get **401**. The stored `data` field is a
 |-------|-------|-------|
 | `SystemUser` | `system_users` (user_db) | Login accounts, roles, VIP fields |
 | `PaymentLog` | `payment_logs` (user_db) | Payment audit trail |
-| `UserInfo` | `user_info` | A **person** (the per-person identity) |
+| `UserInfo` | `user_info` | A **person** (per-person identity): `userID`, `name`, `phone`, `device`, `time`, plus a generic `meta` JSON for extra attributes |
 | `UserData` | `user_data` | One record: `data` is generic JSON, linked to a `UserInfo` |
 
-**Add your own table:** create a class in `models.py`, then restart (tables are
-auto-created by `init_runtime`). For real schema changes in production, use a
-migration tool (e.g. Alembic).
+### Adding a column whenever you want (no rebuild)
+
+Two ways, depending on whether you want a real column:
+
+1. **No schema change** — just put extra fields in the JSON: `UserInfo.meta` or
+   `UserData.data`. The `/save` API already drops any unknown `userInfo` keys into `meta`.
+
+2. **Promote a field to a real, queryable column** — the schema is managed by
+   **Flask-Migrate (Alembic)**, so this is a small, isolated change with no data loss:
+   ```bash
+   # 1. add one line to the model in models.py, e.g.:
+   #      score: Mapped[int | None] = mapped_column()
+   # 2. generate + apply the migration:
+   flask db migrate -m "add score column"
+   flask db upgrade
+   ```
+   On startup the app auto-applies pending migrations (`init_runtime` → `flask db upgrade`).
+   To add a whole new table, add the model class and run the same two commands.
+
+> `FLASK_APP=app.py` is needed for `flask db ...` (the app factory is auto-detected).
 
 ---
 

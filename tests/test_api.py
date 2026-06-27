@@ -97,3 +97,20 @@ def test_plain_user_blocked_from_admin_area(client, app):
     _make(app, "joe", "user")
     _web_login(client, "joe")
     assert client.get("/admin/accounts").status_code == 403
+
+
+def test_change_own_password(client, app):
+    _make(app, "kim", "user")
+    _web_login(client, "kim")
+    # wrong current password is rejected
+    r = client.post("/change_password", data={
+        "current_password": "wrong", "new_password": "newpass1",
+        "confirm_password": "newpass1"})
+    assert "不正確" in r.get_data(as_text=True)
+    # correct current password updates it
+    client.post("/change_password", data={
+        "current_password": "pw12345", "new_password": "newpass1",
+        "confirm_password": "newpass1"})
+    from models import db, SystemUser
+    with app.app_context():
+        assert SystemUser.query.filter_by(username="kim").first().check_password("newpass1")

@@ -41,6 +41,12 @@ class Config:
     PORT = int(os.getenv("PORT", "5000"))
     TIMEZONE = os.getenv("TIMEZONE", "Asia/Taipei")
 
+    # ---- Session cookie security -------------------------------------------
+    SESSION_COOKIE_HTTPONLY = True          # JS can't read the cookie
+    SESSION_COOKIE_SAMESITE = "Lax"         # basic CSRF mitigation
+    SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", False)  # True in prod (HTTPS)
+    PERMANENT_SESSION_LIFETIME = int(os.getenv("PERMANENT_SESSION_LIFETIME", "86400"))
+
     # ===== DATABASE =========================================================
     # To change which database the server uses, edit DATABASE_URL in your .env
     # (or this default). Examples:
@@ -67,13 +73,30 @@ class Config:
     ECPAY_MERCHANT_ID = os.getenv("ECPAY_MERCHANT_ID", "3488647")
     ECPAY_HASH_KEY = os.getenv("ECPAY_HASH_KEY", "emrwOPa0cvFjvCbO")
     ECPAY_HASH_IV = os.getenv("ECPAY_HASH_IV", "jIabjrgpY2LLXZFj")
+    # Default to the SANDBOX/stage endpoint (safe). Switch to the live URL in .env
+    # when going live: https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5
     ECPAY_ACTION_URL = os.getenv(
-        "ECPAY_ACTION_URL", "https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5"
+        "ECPAY_ACTION_URL", "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5"
     )
+    # Order defaults — change these (or pass per-call to create_ecpay_order) without
+    # touching code: payment methods, encryption, default item name, description.
+    ECPAY_CHOOSE_PAYMENT = os.getenv("ECPAY_CHOOSE_PAYMENT", "ALL")
+    ECPAY_ENCRYPT_TYPE = int(os.getenv("ECPAY_ENCRYPT_TYPE", "1"))
+    ECPAY_DEFAULT_ITEM = os.getenv("ECPAY_DEFAULT_ITEM", "Premium_Membership")
+    ECPAY_TRADE_DESC = os.getenv("ECPAY_TRADE_DESC", "Subscription")
     # Public base URL ECPay calls back to (e.g. your ngrok / domain).
     PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:5000")
     VIP_PRICE = int(os.getenv("VIP_PRICE", "199"))
     VIP_DAYS = int(os.getenv("VIP_DAYS", "365"))
+
+    # ---- Email (optional SMTP; password-reset links) -----------------------
+    # If SMTP_HOST is unset, reset links are logged instead of emailed (dev).
+    SMTP_HOST = os.getenv("SMTP_HOST", "")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM = os.getenv("SMTP_FROM", "")
+    SMTP_USE_TLS = _bool("SMTP_USE_TLS", True)
 
     # ---- External data API protection -------------------------------------
     # Comma-separated list of accepted X-API-Key values. Each external client
@@ -111,6 +134,8 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
+    # Require HTTPS for the session cookie in production (override via env if needed).
+    SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", True)
 
 
 class TestingConfig(Config):
