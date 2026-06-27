@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系統帳號管理</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
+        .main-container { max-width: 1200px; margin: 30px auto; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 15px; }
+        .table-custom th { background-color: #f1f3f5; }
+        .role-badge { font-size: 0.8rem; padding: 3px 8px; border-radius: 10px; }
+        .role-admin { background-color: #ffeeba; color: #856404; }
+        .role-user { background-color: #e2e3e5; color: #383d41; }
+        
+        /* 操作按鈕群組 */
+        .action-group { display: flex; gap: 5px; align-items: center; }
+        
+        /* 搜尋按鈕文字不換行 */
+        .btn-search { white-space: nowrap; }
+    </style>
+</head>
+<body>
+
+<div class="main-container">
+    
+    <div class="page-header">
+        <h3>系統帳號管理</h3>
+        <a href="/personal" class="btn btn-outline-secondary btn-sm">← 回到個人中心</a>
+    </div>
+
+    <div class="row mb-4 align-items-center">
+        <div class="col-md-5">
+            <form action="/admin/accounts" method="get">
+                <div class="input-group">
+                    <span class="input-group-text bg-light text-secondary">🔍</span>
+                    
+                    <input type="text" name="q" class="form-control" placeholder="輸入帳號或名稱..." value="{{ keyword }}">
+                    
+                    <button type="submit" class="btn btn-info text-white btn-search">搜尋</button>
+                    
+                    {% if keyword %}
+                    <a href="/admin/accounts" class="btn btn-secondary btn-search">❌ 清除</a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+        
+        <div class="col-md-7 text-end">
+            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createAccountModal">
+                ＋ 新增帳號
+            </button>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover table-custom align-middle">
+            <thead>
+                <tr>
+                    <th>帳號 (Username)</th>
+                    <th>Email</th>
+                    <th>電話</th>
+					<th>權限</th>
+                    <th style="min-width: 350px;">操作 (綁定 / 編輯 / 刪除)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for acc in accounts %}
+                <tr>
+                    <td class="fw-bold text-primary">{{ acc.username }}</td>
+                    <td>{{ acc.email if acc.email else '-' }}</td>
+                    <td>{{ acc.phone if acc.phone else '-' }}</td>
+                    <td>
+                        <span class="role-badge {% if acc.role in ['admin', 'superadmin'] %}role-admin{% else %}role-user{% endif %}">
+                            {{ acc.role }}
+                        </span>
+                    </td>
+                    <td>
+                        {% set can_manage = (sys_user.role == 'superadmin') or (acc.role not in ['admin', 'superadmin']) %}
+                        <div class="action-group">
+                            {% if can_manage %}
+                            <form action="/admin/update_binding" method="POST" class="d-flex gap-1" style="flex-grow: 1;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="account_id" value="{{ acc.id }}">
+                                <input type="text" name="linked_userid" class="form-control form-control-sm"
+                                       value="{{ acc.linked_userid if acc.linked_userid else '' }}"
+                                       placeholder="產品序號" style="width: 120px;">
+                                <button type="submit" class="btn btn-primary btn-sm">儲存</button>
+                            </form>
+
+							<button type="button" class="btn btn-warning btn-sm text-dark"
+									onclick="openEditModal('{{ acc.id }}', '{{ acc.username }}', '{{ acc.email or '' }}', '{{ acc.phone or '' }}', '{{ acc.role }}')">
+								編輯
+							</button>
+                            {% if acc.id != sys_user.id %}
+                            <form action="/admin/delete_account" method="POST" onsubmit="return confirm('確定要刪除帳號 {{ acc.username }} 嗎？此操作無法復原！');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="account_id" value="{{ acc.id }}">
+                                <button type="submit" class="btn btn-danger btn-sm">刪除</button>
+                            </form>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-muted small">僅限超級管理員管理</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="createAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="/admin/create_account" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">新增使用者帳號</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">帳號 *</label>
+                        <input type="text" name="username" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">密碼 *</label>
+                        <input type="password" name="password" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email (選填)</label>
+                        <input type="email" name="email" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">電話 (選填)</label>
+                        <input type="text" name="phone" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">預先綁定序號 (選填)</label>
+                        <input type="text" name="linked_userid" class="form-control" placeholder="例如: T0123">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-success">建立帳號</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="/admin/edit_account" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header" style="background-color: #ffc107;">
+                    <h5 class="modal-title text-dark">編輯帳號資料</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="account_id" id="edit_account_id">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">帳號 (不可修改)</label>
+                        <input type="text" id="edit_username" class="form-control" readonly disabled style="background-color: #e9ecef;">
+                    </div>
+					<!-- 1. 身分組選擇 (只有超級管理員能指派 admin / superadmin) -->
+					<div class="mb-3">
+						<label class="form-label">系統角色</label>
+						<select name="role" id="edit_role" class="form-select">
+							<option value="user">user (一般用戶)</option>
+							{% if sys_user.role == 'superadmin' %}
+							<option value="admin">admin (管理員)</option>
+							<option value="superadmin">superadmin (超級管理員)</option>
+							{% endif %}
+						</select>
+					</div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" id="edit_email" class="form-control">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">電話</label>
+                        <input type="text" name="phone" id="edit_phone" class="form-control">
+                    </div>
+
+                    <hr>
+                    <div class="mb-3">
+                        <label class="form-label text-danger fw-bold">重設密碼</label>
+                        <input type="text" name="password" class="form-control" placeholder="若不修改請留空">
+                        <div class="form-text">若在此輸入，將會覆蓋使用者原本的密碼。</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-warning">儲存變更</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+            const region = new Intl.DateTimeFormat().resolvedOptions().locale
+            console.log("系統語言偵測到:", region);
+
+            const isSimplified = region.toLowerCase().includes('cn') || 
+                                region.toLowerCase().includes('sg') || 
+                                region.toLowerCase().includes('hans');
+
+            if (isSimplified) {
+                console.log("切換為簡體中文模式...");
+                
+                const converter = OpenCC.Converter({ from: 'hk', to: 'cn' });
+
+                // 3. 定義需要轉換的內容區域
+                // 我們轉換整個 body 的文字內容
+                const rootNode = document.documentElement; 
+                
+                // 遞迴轉換所有文字節點
+                function convertNode(node) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        node.textContent = converter(node.textContent);
+                    } else {
+                        for (let child of node.childNodes) {
+                            // 排除掉不需要轉換的標籤 (例如 script, style)
+                            if (child.tagName !== 'SCRIPT' && child.tagName !== 'STYLE') {
+                                convertNode(child);
+                            }
+                        }
+                    }
+                }
+
+                convertNode(rootNode);
+            }
+    });
+    var editModal = new bootstrap.Modal(document.getElementById('editAccountModal'));
+
+    // 這裡必須定義接收所有 7 個參數
+    function openEditModal(id, username, email, phone, role) {
+        // 1. 基本資料填入
+        document.getElementById('edit_account_id').value = id;
+        document.getElementById('edit_username').value = username;
+        document.getElementById('edit_email').value = email;
+        document.getElementById('edit_phone').value = phone;
+
+        // 2. 設定角色下拉選單
+        const roleSelect = document.getElementById('edit_role');
+        if (roleSelect) {
+            roleSelect.value = role;
+        }
+
+        editModal.show();
+    }
+</script>
+
+</body>
+</html>

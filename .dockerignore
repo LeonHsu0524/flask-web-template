@@ -1,0 +1,22 @@
+# Keep secrets and junk out of the image
+.env
+*.pem
+AWS-KEY.pem
+
+venv/
+env/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+instance/
+backups/
+*.db
+*.sqlite3
+*.log
+
+.git/
+.gitignore
+ngrok.exe
+# NOTE: tests/ and pytest.ini are kept in the image on purpose — Jenkins runs
+# `docker compose exec flask-app pytest` against the running container.

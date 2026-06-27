@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>付款成功</title>
+    <style>
+        body { text-align: center; font-family: sans-serif; padding: 50px; }
+        .btn { background: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>✓ 付款成功</h1>
+    <p>您的訂單編號：{{ order_id }}</p>
+    <p>金額：NT$ {{ amount }}</p>
+    <br><br>
+    <a href="{{ url_for('main.personal_page') }}" class="btn">回到個人主頁 (查看 VIP 功能)</a>
+</body>
+</html>

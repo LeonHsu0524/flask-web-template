@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+
+instance/
+*.db
+*.sqlite3
+
+backups/
+*.log
+
+# Secrets — never commit
+.env
+*.pem
+AWS-KEY.pem
+
+# Tooling
+.pytest_cache/
+ngrok.exe

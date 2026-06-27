@@ -1,0 +1,95 @@
+# Secrets & "HOW TO GO LIVE" checklist
+
+All sensitive/config values are read from environment variables (see
+`config.py`). In development they fall back to **test** values so the app runs
+out of the box. Copy `.env.example` → `.env` and edit before deploying.
+
+> The real `.env` and `AWS-KEY.pem` are git-ignored. Never commit them.
+
+---
+
+## 1. ECPay payment credentials
+
+Currently using ECPay **test** credentials. To accept real payments:
+
+1. Get your official `MerchantID`, `HashKey`, `HashIV` from the ECPay merchant
+   portal (https://vendor.ecpay.com.tw/).
+2. Set in `.env`:
+   ```
+   ECPAY_MERCHANT_ID=<official id>
+   ECPAY_HASH_KEY=<official key>
+   ECPAY_HASH_IV=<official iv>
+   ECPAY_ACTION_URL=https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5
+   PUBLIC_BASE_URL=https://your-public-domain
+   ```
+   - Test/staging action URL: `https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5`
+3. `PUBLIC_BASE_URL` must be reachable from the internet (domain or ngrok) so
+   ECPay can POST to `/payment/notify` and `/payment/result`.
+
+> Reference: the ECPay API Skill is installed at `~/.claude/skills/ecpay`
+> (guides, API references, and encryption test-vectors) to validate the
+> CheckMacValue / encryption wiring.
+
+## 2. AWS key file (`AWS-KEY.pem`)
+
+The repo previously shipped a private key in source control — **do not do this**.
+
+1. Keep the real `AWS-KEY.pem` outside the repo (it is git-ignored and
+   docker-ignored).
+2. Point to it via an env var / your deploy tooling rather than committing it.
+3. If the old key was ever pushed, **rotate it** in AWS. Starting a fresh repo
+   (no old `.git` history) ensures the old leaked key is not carried forward.
+
+## 3. Flask secret key
+
+```
+SECRET_KEY=<long random string>
+```
+Used for sessions and for signing password-reset / API login tokens. Changing
+it invalidates existing sessions and tokens.
+
+## 4. External data API keys
+
+`/save` and `/log` require either:
+- an `X-API-Key` header matching one of `API_KEYS`, or
+- an `Authorization: Bearer <token>` issued by `/login`.
+
+```
+API_KEYS=client-a-key,client-b-key
+```
+Give each external client its own key; rotate by editing the list.
+
+## 4b. Default admin account
+
+On first run the app auto-creates an admin so a fresh deploy isn't locked out:
+
+```
+DEFAULT_ADMIN_ENABLED=true
+DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_PASSWORD=admin12345   # <-- CHANGE THIS
+DEFAULT_ADMIN_ROLE=superadmin
+```
+
+- It is created **only if** that username doesn't already exist (it never
+  overwrites an existing account or resets its password).
+- **Change the default password before deploying**, or set your own in `.env`.
+- After you've created your real admin, set `DEFAULT_ADMIN_ENABLED=false`.
+- To add more admins later: `python create_superadmin.py <username> <password>`.
+
+## 5. Switching the database engine
+
+Edit `DATABASE_URL` in `.env`:
+
+| Engine     | Example URL                                             | Extra driver (requirements.txt) |
+|------------|--------------------------------------------------------|---------------------------------|
+| SQLite     | `sqlite:///data.db`                                     | (built in)                      |
+| PostgreSQL | `postgresql+psycopg2://user:pass@host:5432/dbname`     | `psycopg2-binary`               |
+| MySQL      | `mysql+pymysql://user:pass@host:3306/dbname`           | `PyMySQL`                       |
+
+Uncomment the matching driver in `requirements.txt` and reinstall.
+
+## 6. Production server
+
+`APP_ENV=production` makes `app.py` serve via **waitress** (works on Windows and
+Linux). The Docker image sets this automatically. Behind nginx, no extra change
+is needed (`nginx.conf` proxies to the app).
