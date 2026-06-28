@@ -114,6 +114,21 @@ class Config:
     # gets its own key; rotate by editing this list. Empty list = API locked.
     API_KEYS = _list("API_KEYS", "dev-test-key-change-me")
 
+    # ---- Self-service data API (/api/v1) ----------------------------------
+    # Each stored record carries a generic `kind` label (a free string). These
+    # decide what an outside app may read/write through the account API:
+    #   API_READABLE_KINDS  empty = all kinds readable (default); otherwise only
+    #                       records whose kind is in this list are returned.
+    #   API_WRITABLE_KINDS  empty = any kind may be written; otherwise a cap.
+    #   API_DEFAULT_KIND    the kind applied to writes that don't specify one.
+    API_READABLE_KINDS = _list("API_READABLE_KINDS", "")
+    API_WRITABLE_KINDS = _list("API_WRITABLE_KINDS", "")
+    API_DEFAULT_KIND = os.getenv("API_DEFAULT_KIND", "message")
+    # Largest page size a client may request from the data API (anti-DoS cap).
+    API_MAX_PAGE_SIZE = int(os.getenv("API_MAX_PAGE_SIZE", "200"))
+    # Minimum password length accepted at registration (0 = no minimum).
+    MIN_PASSWORD_LENGTH = int(os.getenv("MIN_PASSWORD_LENGTH", "8"))
+
     # ---- Security add-ons --------------------------------------------------
     # Rate limits (Flask-Limiter syntax). Tune per environment.
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200 per minute")
@@ -127,7 +142,7 @@ class Config:
     WTF_CSRF_ENABLED = _bool("WTF_CSRF_ENABLED", True)
     # Lifetime (seconds) of password-reset and API login tokens.
     RESET_TOKEN_MAX_AGE = int(os.getenv("RESET_TOKEN_MAX_AGE", "3600"))
-    API_TOKEN_MAX_AGE = int(os.getenv("API_TOKEN_MAX_AGE", "2592000"))  # 30 days
+    API_TOKEN_MAX_AGE = int(os.getenv("API_TOKEN_MAX_AGE", "604800"))  # 7 days
 
     # ---- Registration fields (optional, config-gated) ----------------------
     # Address picker (cascading country/state dropdowns + Taiwan 縣市/鄉鎮市區
@@ -176,6 +191,7 @@ class TestingConfig(Config):
     RATELIMIT_ENABLED = False
     DEFAULT_ADMIN_ENABLED = False
     API_KEYS = ["test-key"]
+    MIN_PASSWORD_LENGTH = 0   # keep test fixtures' short passwords valid
     ECPAY_MERCHANT_ID = "2000132"
     ECPAY_HASH_KEY = "5294y06JbISpM5x9"
     ECPAY_HASH_IV = "v77hoKGq4kWxNNIS"

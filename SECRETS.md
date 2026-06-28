@@ -65,6 +65,12 @@ API_KEYS=client-a-key,client-b-key
 ```
 Give each external client its own key; rotate by editing the list.
 
+The `/api/v1` account API instead uses per-account **Bearer tokens** from
+`/api/v1/auth/login`. Tokens expire after `API_TOKEN_MAX_AGE` (default 7 days) and
+are invalidated when the account's password changes. `API_READABLE_KINDS` /
+`API_WRITABLE_KINDS` whitelist which record kinds the API may read/write.
+**Always serve the API over HTTPS** so tokens and passwords are never sent in clear.
+
 ## 4b. Default admin account
 
 On first run the app auto-creates an admin so a fresh deploy isn't locked out:

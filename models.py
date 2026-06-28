@@ -68,6 +68,9 @@ class UserData(db.Model):
     # client sends here, so this template is not tied to any one data domain.
     # In Python, JSON values are dicts or lists.
     data: Mapped[dict] = mapped_column(db.JSON)
+    # Generic category label (a free string, e.g. "message", "event"). The data
+    # API can be configured to expose only certain kinds (API_READABLE_KINDS).
+    kind: Mapped[str | None] = mapped_column(db.String(50))
     timestamp: Mapped[datetime] = mapped_column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)

@@ -121,6 +121,91 @@ def test_log_requires_key(client):
     assert client.get("/log", headers={"X-API-Key": "test-key"}).status_code == 200
 
 
+# ---- self-service account API (/api/v1) -----------------------------------
+def _signup(client, username, password="secret1", **extra):
+    r = client.post("/api/v1/auth/register",
+                    json={"username": username, "password": password, **extra})
+    assert r.status_code == 201, r.get_data(as_text=True)
+    tok = client.post("/api/v1/auth/login",
+                      json={"username": username, "password": password}).get_json()["token"]
+    return tok
+
+
+def _auth(tok):
+    return {"Authorization": f"Bearer {tok}"}
+
+
+def test_v1_full_flow_register_login_post_get(client):
+    tok = _signup(client, "nina")
+    # profile
+    me = client.get("/api/v1/me", headers=_auth(tok)).get_json()
+    assert me["profile"]["username"] == "nina"
+    # write own data
+    r = client.post("/api/v1/me/data", json={"data": {"steps": 42}, "kind": "message"},
+                    headers=_auth(tok))
+    assert r.status_code == 201
+    # read it back with payload
+    body = client.get("/api/v1/me/data", headers=_auth(tok)).get_json()
+    assert body["total"] == 1
+    assert body["records"][0]["data"] == {"steps": 42}
+
+
+def test_v1_isolation_between_accounts(client):
+    tok_a = _signup(client, "alpha")
+    tok_b = _signup(client, "bravo")
+    client.post("/api/v1/me/data", json={"data": {"secret": "A"}}, headers=_auth(tok_a))
+    # B sees nothing of A's
+    assert client.get("/api/v1/me/data", headers=_auth(tok_b)).get_json()["total"] == 0
+    # B cannot forge access by registering with A's name/linked_userid
+    tok_forge = _signup(client, "evil", name="alpha", linked_userid="alpha")
+    assert client.get("/api/v1/me/data", headers=_auth(tok_forge)).get_json()["total"] == 0
+
+
+def test_v1_requires_bearer(client):
+    assert client.get("/api/v1/me").status_code == 401
+    assert client.get("/api/v1/me/data").status_code == 401
+    # a shared API key is NOT accepted on the account endpoints
+    assert client.get("/api/v1/me", headers={"X-API-Key": "test-key"}).status_code == 401
+
+
+def test_v1_token_revoked_on_password_change(client, app):
+    tok = _signup(client, "owen")
+    assert client.get("/api/v1/me", headers=_auth(tok)).status_code == 200
+    # change the password -> password-stamp changes -> old token rejected
+    from models import db, SystemUser
+    u = SystemUser.query.filter_by(username="owen").first()
+    u.set_password("brand-new-pass")
+    db.session.commit()
+    assert client.get("/api/v1/me", headers=_auth(tok)).status_code == 401
+
+
+def test_v1_per_page_capped(client, app):
+    app.config["API_MAX_PAGE_SIZE"] = 200
+    tok = _signup(client, "pam")
+    r = client.get("/api/v1/me/data?per_page=100000", headers=_auth(tok)).get_json()
+    assert r["per_page"] == 200
+
+
+def test_v1_readable_kinds_policy(client, app):
+    tok = _signup(client, "quinn")
+    client.post("/api/v1/me/data", json={"data": 1, "kind": "message"}, headers=_auth(tok))
+    client.post("/api/v1/me/data", json={"data": 2, "kind": "secret"}, headers=_auth(tok))
+    # no restriction -> both kinds visible
+    assert client.get("/api/v1/me/data", headers=_auth(tok)).get_json()["total"] == 2
+    # restrict to "message" -> only that kind is returned
+    app.config["API_READABLE_KINDS"] = ["message"]
+    body = client.get("/api/v1/me/data", headers=_auth(tok)).get_json()
+    assert body["total"] == 1 and body["records"][0]["kind"] == "message"
+    # ?kind=secret cannot bypass the whitelist
+    assert client.get("/api/v1/me/data?kind=secret", headers=_auth(tok)).get_json()["total"] == 0
+
+
+def test_v1_min_password_length_enforced(client, app):
+    app.config["MIN_PASSWORD_LENGTH"] = 8
+    r = client.post("/api/v1/auth/register", json={"username": "shorty", "password": "abc"})
+    assert r.status_code == 400
+
+
 # ---- role model: user < admin < superadmin --------------------------------
 def _make(app, username, role):
     from models import db, SystemUser

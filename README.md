@@ -220,53 +220,86 @@ below)*.
 | `/personal` | The logged-in user's own profile + records |
 
 ### g) Protected external data API
-| Route | Method | Purpose |
-|-------|--------|---------|
-| `/save` | POST | Receive data from an outside client |
-| `/log` | GET | Recent records |
+| Route | Method | Auth | Purpose |
+|-------|--------|------|---------|
+| `/api/v1/auth/register` | POST | — | Create an account |
+| `/api/v1/auth/login` | POST | — | Log in → returns a Bearer token |
+| `/api/v1/me` | GET | Bearer | The account's own profile |
+| `/api/v1/me/data` | GET | Bearer | The account's own records (with payloads, paginated) |
+| `/api/v1/me/data` | POST | Bearer | Store a record under the account |
+| `/save` | POST | API key / Bearer | Trusted server ingestion (any identity) |
+| `/log` | GET | API key / Bearer | Recent records (metadata) |
 
-Both require authentication — see the next section.
+The `/api/v1` endpoints let an **outside app create an account, log in, and read/write
+only its own data** — token-scoped so it can never reach another account's data. See
+the next section.
 
 ---
 
-## 6. Using the external API (authentication)
+## 6. Using the API
 
-Protected endpoints accept **either**:
+There are two ways in, for two kinds of caller.
 
-**Option A — API key** (for servers/devices). Keys are listed in `API_KEYS` in
-`.env` (one per client; rotate by editing the list).
+### A) Self-service account API (`/api/v1`) — for an app/program
+
+An outside app creates an account, logs in for a token, then reads/writes **only its
+own data**. The token identifies the account; the server scopes every read/write to it.
+
+```bash
+# 1. Register an account
+curl -X POST http://localhost:5000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"a-strong-password"}'
+
+# 2. Log in → returns {"token": "..."}
+TOKEN=$(curl -s -X POST http://localhost:5000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"a-strong-password"}' | jq -r .token)
+
+# 3. POST my own data (generic JSON; optional "kind" label)
+curl -X POST http://localhost:5000/api/v1/me/data \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"kind":"message","data":{"anything":"you want","values":[1,2,3]}}'
+
+# 4. GET my own data back (paginated, with payloads)
+curl http://localhost:5000/api/v1/me/data -H "Authorization: Bearer $TOKEN"
+
+# my profile
+curl http://localhost:5000/api/v1/me -H "Authorization: Bearer $TOKEN"
+```
+
+- **Isolation:** the data key is the account's unique `username` (taken from the
+  verified token, never the request body) — an account can never read another's data.
+- **Token revocation:** tokens carry a stamp of the password, so **changing the
+  password invalidates old tokens**; they also expire after `API_TOKEN_MAX_AGE` (7d default).
+- **Readable kinds:** each record has a generic `kind` label. `API_READABLE_KINDS`
+  (empty = all) whitelists which kinds the API returns; `?kind=` narrows within that.
+  `API_DEFAULT_KIND` is applied to writes with no kind; `API_WRITABLE_KINDS` can cap writes.
+- **Pagination:** `?page` & `?per_page` (capped at `API_MAX_PAGE_SIZE`, default 200).
+
+### B) Trusted ingestion (`/save`, `/log`) — for your own server/device
+
+These accept a shared **API key** (`X-API-Key`, listed in `API_KEYS`) *or* a Bearer
+token, and can write under any identity — for back-end pipelines you control, not
+untrusted clients.
 
 ```bash
 curl -X POST http://localhost:5000/save \
-  -H "X-API-Key: dev-test-key-change-me" \
-  -H "Content-Type: application/json" \
-  -d '{"userInfo": {"userID": "U1", "name": "Alice", "phone": "0900"},
-       "data": {"anything": "you want", "values": [1,2,3]}}'
+  -H "X-API-Key: dev-test-key-change-me" -H "Content-Type: application/json" \
+  -d '{"userInfo":{"userID":"U1","name":"Alice"},"data":{"x":1},"kind":"telemetry"}'
 ```
 
-**Option B — Bearer token** (for a logged-in app user). Get the token from
-`/login`, then send it back:
-
-```bash
-# 1. login → returns {"token": "..."}
-curl -X POST http://localhost:5000/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"alice","password":"secret1"}'
-
-# 2. call the API with the token
-curl -X POST http://localhost:5000/save \
-  -H "Authorization: Bearer <token>" \
-  -d '{...}'
-```
-
-Requests without a valid key/token get **401**. The stored `data` field is a
-**generic JSON blob** — send any shape; this template is not tied to one domain.
+Requests without a valid key/token get **401**. The stored `data` is a **generic JSON
+blob** — send any shape; the template is not tied to one domain.
 
 ### Built-in protections
-- **CSRF**: all web forms include a CSRF token (Flask-WTF). The JSON API routes
-  are exempt and use the key/token instead.
-- **Rate limiting**: `/login`, `/save`, `/forgot_password` are throttled
-  (configurable via `RATELIMIT_*` in `.env`).
+- **HTTPS:** always serve the API over TLS in production (the nginx config terminates
+  it) — Bearer tokens and passwords must never travel in clear text.
+- **CSRF:** web forms carry a CSRF token (Flask-WTF); the JSON API routes are exempt
+  and use the key/token instead.
+- **Rate limiting:** login, registration, `/save`, and `POST /api/v1/me/data` are
+  throttled (configurable via `RATELIMIT_*` in `.env`).
+- **No secret leakage:** error responses are generic; details are logged server-side.
 
 ---
 
@@ -277,7 +310,7 @@ Requests without a valid key/token get **401**. The stored `data` field is a
 | `SystemUser` | `system_users` (user_db) | Login accounts, roles, VIP fields |
 | `PaymentLog` | `payment_logs` (user_db) | Payment audit trail |
 | `UserInfo` | `user_info` | A **person** (per-person identity): `userID`, `name`, `phone`, `device`, `time`, plus a generic `meta` JSON for extra attributes |
-| `UserData` | `user_data` | One record: `data` is generic JSON, linked to a `UserInfo` |
+| `UserData` | `user_data` | One record: `data` is generic JSON + a generic `kind` label, linked to a `UserInfo` |
 
 ### Adding a column whenever you want (no rebuild)
 

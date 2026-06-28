@@ -7,6 +7,7 @@ data API. All configuration lives in config.py (env-driven). The app is built
 with an application factory (create_app) so it can be imported as a module and
 tested, not only run as a whole system.
 """
+import hashlib
 import logging
 import os
 import shutil
@@ -171,6 +172,39 @@ def api_key_required(f):
 
         return jsonify({
             "message": "Unauthorized: provide a valid X-API-Key header or Bearer token",
+            "status": "fail",
+        }), 401
+    return decorated
+
+
+def password_stamp(user) -> str:
+    """Short fingerprint of the account's password hash. Embedded in login tokens
+    so that changing the password invalidates previously issued tokens."""
+    return hashlib.sha256((user.password_hash or "").encode()).hexdigest()[:16]
+
+
+def bearer_user_required(f):
+    """Require a valid Bearer token tied to an account (not a shared API key).
+
+    Loads the SystemUser from the token and verifies the embedded password-stamp
+    still matches, so a password change revokes old tokens. Sets g.api_user.
+    Used by the self-service /api/v1/me endpoints.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            payload = read_token(
+                auth[7:], salt="api-login",
+                max_age=current_app.config["API_TOKEN_MAX_AGE"],
+            )
+            if payload:
+                user = db.session.get(SystemUser, payload.get("user_id"))
+                if user and payload.get("pw") == password_stamp(user):
+                    g.api_user = user
+                    return f(*args, **kwargs)
+        return jsonify({
+            "message": "Unauthorized: a valid Bearer token is required",
             "status": "fail",
         }), 401
     return decorated
@@ -373,55 +407,66 @@ def parse_birthday(value):
     return bday, None
 
 
-@bp.route("/api/register", methods=["POST"])
-def api_register():
-    data = request.json or {}
-    username = data.get("username")
-    password = data.get("password")
-    if not username or not password:
-        return jsonify({"message": "Missing username or password", "status": "fail"}), 400
-    if SystemUser.query.filter_by(username=username).first():
-        return jsonify({"message": "Username already exists", "status": "fail"}), 400
+def me_identity(user):
+    """The (userID, name) an account owns. Keyed on the immutable, unique username
+    (never client-supplied values) so an account can only ever reach its own data."""
+    return (user.username, user.name or user.username)
 
-    role = "user"
-    linked_userid = data.get("linked_userid")
+
+def register_account(data):
+    """Create a plain 'user' account from a JSON/dict payload, honoring the
+    config-gated optional fields. Returns (user, None) or (None, error_message).
+
+    Public registration NEVER accepts role or linked_userid (admin-only bindings).
+    Shared by the legacy /api/register and the /api/v1/auth/register routes.
+    """
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not username or not password:
+        return None, "Missing username or password"
+    min_len = current_app.config.get("MIN_PASSWORD_LENGTH", 0)
+    if min_len and len(password) < min_len:
+        return None, f"Password must be at least {min_len} characters"
+    if SystemUser.query.filter_by(username=username).first():
+        return None, "Username already exists"
 
     cfg = current_app.config
     email = opt_text(data.get("email"), cfg["REGISTER_COLLECT_EMAIL"])
     if cfg["REGISTER_COLLECT_EMAIL"] and cfg["REGISTER_EMAIL_REQUIRED"] and not email:
-        return jsonify({"message": "Email is required", "status": "fail"}), 400
+        return None, "Email is required"
     phone = opt_text(data.get("phone"), cfg["REGISTER_COLLECT_PHONE"])
     if cfg["REGISTER_COLLECT_PHONE"] and cfg["REGISTER_PHONE_REQUIRED"] and not phone:
-        return jsonify({"message": "Phone is required", "status": "fail"}), 400
-
+        return None, "Phone is required"
     address = build_address(data) if cfg["REGISTER_COLLECT_ADDRESS"] else None
     if cfg["REGISTER_COLLECT_ADDRESS"] and cfg["REGISTER_ADDRESS_REQUIRED"] and not address_ok(address):
-        return jsonify({"message": "Address is required", "status": "fail"}), 400
-
+        return None, "Address is required"
     birthday = None
     if cfg["REGISTER_COLLECT_BIRTHDAY"]:
         birthday, bday_err = parse_birthday(data.get("birthday"))
-        if bday_err or (cfg["REGISTER_BIRTHDAY_REQUIRED"] and birthday is None):
-            return jsonify({"message": bday_err or "Birthday is required", "status": "fail"}), 400
+        if bday_err:
+            return None, bday_err
+        if cfg["REGISTER_BIRTHDAY_REQUIRED"] and birthday is None:
+            return None, "Birthday is required"
 
     try:
-        user = SystemUser(
-            username=username,
-            name=data.get("name"),
-            email=email,
-            phone=phone,
-            linked_userid=linked_userid,
-            role=role,
-            address=address,
-            birthday=birthday,
-        )
+        user = SystemUser(username=username, name=data.get("name"), email=email,
+                          phone=phone, role="user", address=address, birthday=birthday)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
-        return jsonify({"message": "User created successfully", "status": "success"}), 201
-    except Exception as e:
+        return user, None
+    except Exception:
         db.session.rollback()
-        return jsonify({"message": str(e), "status": "error"}), 500
+        current_app.logger.exception("register_account failed")
+        return None, "Registration failed"
+
+
+@bp.route("/api/register", methods=["POST"])
+def api_register():
+    user, err = register_account(request.get_json(silent=True) or {})
+    if err:
+        return jsonify({"message": err, "status": "fail"}), 400
+    return jsonify({"message": "User created successfully", "status": "success"}), 201
 
 
 @bp.route("/register", methods=["POST"])
@@ -495,23 +540,31 @@ def web_register_action():
 
 
 # ---- Account: login / session / token -------------------------------------
+def issue_login(user):
+    """Build the successful-login JSON for an account, including a bearer token
+    the app sends back to reach the API. The token carries a password-stamp so a
+    password change invalidates it. Shared by /login and /api/v1/auth/login."""
+    vip_date = (user.vip_expires_at.strftime("%Y-%m-%d")
+                if user.is_vip and user.vip_expires_at else "")
+    token = make_token(
+        {"user_id": user.id, "username": user.username, "pw": password_stamp(user)},
+        salt="api-login",
+    )
+    return {
+        "message": "Login successful", "status": "success",
+        "token": token, "user_id": user.id, "username": user.username,
+        "linked_userid": getattr(user, "linked_userid", "") or "",
+        "is_vip": user.is_vip, "vip_expires_at": vip_date,
+    }
+
+
 @bp.route("/login", methods=["POST"])
 @limiter.limit(lambda: current_app.config["RATELIMIT_LOGIN"])
 def api_login():
     data = request.json or {}
     user = SystemUser.query.filter_by(username=data.get("username")).first()
     if user and user.check_password(data.get("password")):
-        vip_date = (user.vip_expires_at.strftime("%Y-%m-%d")
-                    if user.is_vip and user.vip_expires_at else "")
-        # Issue a bearer token the mobile app sends back to reach the API.
-        token = make_token({"user_id": user.id, "username": user.username},
-                           salt="api-login")
-        return jsonify({
-            "message": "Login successful", "status": "success",
-            "token": token, "user_id": user.id, "username": user.username,
-            "linked_userid": getattr(user, "linked_userid", ""),
-            "is_vip": user.is_vip, "vip_expires_at": vip_date,
-        }), 200
+        return jsonify(issue_login(user)), 200
     return jsonify({"message": "Invalid credentials", "status": "fail"}), 401
 
 
@@ -897,12 +950,14 @@ def save_data():
 
         # Generic payload: store body["data"] if present, else the whole body.
         payload = body.get("data") if "data" in body else body
-        db.session.add(UserData(userID=info["userID"], name=info["name"], data=payload))
+        db.session.add(UserData(userID=info["userID"], name=info["name"],
+                                data=payload, kind=body.get("kind")))
         db.session.commit()
         return jsonify({"message": "Data saved", "status": "success"}), 200
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return jsonify({"message": str(e), "status": "error"}), 400
+        current_app.logger.exception("/save failed")
+        return jsonify({"message": "Could not save data", "status": "error"}), 400
 
 
 @bp.route("/log", methods=["GET"])
@@ -915,6 +970,118 @@ def get_log():
          "time": to_local(r.timestamp).strftime("%Y-%m-%d %H:%M:%S") if r.timestamp else None}
         for r in rows
     ]), 200
+
+
+# ===========================================================================
+# Self-service account API (/api/v1) — an outside app can register, log in,
+# and read/write ONLY its own data (token-scoped). See README section 6.
+# ===========================================================================
+@bp.route("/api/v1/auth/register", methods=["POST"])
+@csrf.exempt
+@limiter.limit(lambda: current_app.config["RATELIMIT_RESET"])
+def api_v1_register():
+    user, err = register_account(request.get_json(silent=True) or {})
+    if err:
+        return jsonify({"status": "fail", "message": err}), 400
+    return jsonify({"status": "success", "message": "Account created",
+                    "username": user.username}), 201
+
+
+@bp.route("/api/v1/auth/login", methods=["POST"])
+@csrf.exempt
+@limiter.limit(lambda: current_app.config["RATELIMIT_LOGIN"])
+def api_v1_login():
+    data = request.get_json(silent=True) or {}
+    user = SystemUser.query.filter_by(username=data.get("username")).first()
+    if user and user.check_password(data.get("password")):
+        return jsonify(issue_login(user)), 200
+    return jsonify({"status": "fail", "message": "Invalid credentials"}), 401
+
+
+@bp.route("/api/v1/me", methods=["GET"])
+@bearer_user_required
+def api_v1_me():
+    u = g.api_user
+    return jsonify({"status": "success", "profile": {
+        "username": u.username, "name": u.name, "email": u.email, "phone": u.phone,
+        "is_vip": u.is_vip,
+        "vip_expires_at": u.vip_expires_at.strftime("%Y-%m-%d") if u.vip_expires_at else None,
+        "linked_userid": u.linked_userid,
+        "address": u.address,
+        "birthday": u.birthday.isoformat() if u.birthday else None,
+    }}), 200
+
+
+def _allowed_kinds(cfg, kind_param):
+    """Resolve which record kinds a read may return.
+
+    Returns a set of kinds to filter on, or None for "no restriction (all kinds)".
+    Honors the API_READABLE_KINDS whitelist (empty = all) and an optional ?kind=
+    narrowing that can never exceed the whitelist.
+    """
+    readable = set(cfg.get("API_READABLE_KINDS") or [])
+    kind_param = (kind_param or "").strip()
+    if readable:
+        return readable & {kind_param} if kind_param else readable
+    return {kind_param} if kind_param else None
+
+
+@bp.route("/api/v1/me/data", methods=["GET"])
+@bearer_user_required
+def api_v1_get_data():
+    cfg = current_app.config
+    uid, nm = me_identity(g.api_user)
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    per_page = max(1, min(per_page, cfg["API_MAX_PAGE_SIZE"]))
+
+    wanted = _allowed_kinds(cfg, request.args.get("kind"))
+    if wanted is not None and not wanted:
+        return jsonify({"status": "success", "page": page, "per_page": per_page,
+                        "total": 0, "records": []}), 200
+
+    q = UserData.query.filter_by(userID=uid, name=nm)
+    if wanted is not None:
+        q = q.filter(UserData.kind.in_(wanted))
+    pagination = (q.order_by(UserData.timestamp.desc())
+                  .paginate(page=page, per_page=per_page, error_out=False))
+    return jsonify({
+        "status": "success", "page": page, "per_page": per_page,
+        "total": pagination.total,
+        "records": [{
+            "id": r.id, "kind": r.kind, "data": r.data,
+            "time": to_local(r.timestamp).strftime("%Y-%m-%d %H:%M:%S") if r.timestamp else None,
+        } for r in pagination.items],
+    }), 200
+
+
+@bp.route("/api/v1/me/data", methods=["POST"])
+@csrf.exempt
+@bearer_user_required
+@limiter.limit(lambda: current_app.config["RATELIMIT_SAVE"])
+def api_v1_post_data():
+    cfg = current_app.config
+    body = request.get_json(silent=True) or {}
+    kind = (body.get("kind") or cfg["API_DEFAULT_KIND"] or "").strip() or None
+    writable = set(cfg.get("API_WRITABLE_KINDS") or [])
+    if writable and kind not in writable:
+        return jsonify({"status": "fail", "message": "kind not allowed"}), 403
+
+    payload = body.get("data") if "data" in body else body
+    uid, nm = me_identity(g.api_user)
+    try:
+        person = UserInfo.query.filter_by(userID=uid, name=nm).first()
+        if not person:
+            person = UserInfo(userID=uid, name=nm,
+                              time=get_now().strftime("%Y-%m-%d %H:%M:%S"))
+            db.session.add(person)
+        db.session.add(UserData(userID=uid, name=nm, data=payload, kind=kind))
+        db.session.commit()
+        return jsonify({"status": "success", "message": "Saved", "kind": kind}), 201
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("/api/v1/me/data save failed")
+        return jsonify({"status": "error", "message": "Could not save data"}), 400
 
 
 # ===========================================================================
@@ -953,6 +1120,8 @@ def _warn_insecure_production(app: Flask) -> None:
         logging.warning("⚠️  SECRET_KEY is still the default — set a strong SECRET_KEY in .env!")
     if app.config.get("DEFAULT_ADMIN_PASSWORD") == "admin12345":
         logging.warning("⚠️  DEFAULT_ADMIN_PASSWORD is still the default — change it in .env!")
+    if "dev-test-key-change-me" in app.config.get("API_KEYS", []):
+        logging.warning("⚠️  API_KEYS still contains the default key — set real API_KEYS in .env!")
 
 
 def seed_default_admin(app: Flask) -> None:
