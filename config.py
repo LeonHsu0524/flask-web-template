@@ -139,6 +139,10 @@ class Config:
     REGISTER_ADDRESS_REQUIRED = _bool("REGISTER_ADDRESS_REQUIRED", False)
     REGISTER_COLLECT_BIRTHDAY = _bool("REGISTER_COLLECT_BIRTHDAY", True)
     REGISTER_BIRTHDAY_REQUIRED = _bool("REGISTER_BIRTHDAY_REQUIRED", False)
+    REGISTER_COLLECT_EMAIL = _bool("REGISTER_COLLECT_EMAIL", True)
+    REGISTER_EMAIL_REQUIRED = _bool("REGISTER_EMAIL_REQUIRED", False)
+    REGISTER_COLLECT_PHONE = _bool("REGISTER_COLLECT_PHONE", True)
+    REGISTER_PHONE_REQUIRED = _bool("REGISTER_PHONE_REQUIRED", False)
 
     # ---- Default admin (seeded on first run) -------------------------------
     # On startup, if no account with this username exists, one is auto-created

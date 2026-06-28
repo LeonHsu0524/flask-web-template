@@ -153,11 +153,16 @@ them as `url_for('main.<function>')`.
 | `/api/register` | POST (JSON) | Register from an app/client |
 | `/register` | POST (JSON) | Minimal username+password register |
 
-**Optional fields — address & birthday.** The register form can also collect a
-structured address and a birthday, each independently controlled by config:
+**Optional fields.** The register form can collect email, phone, a structured
+address, and a birthday — each independently controlled by a pair of config flags
+(`*_COLLECT_*` shows the field, `*_REQUIRED` makes it mandatory):
 
 | Flag | Default | Effect |
 |------|---------|--------|
+| `REGISTER_COLLECT_EMAIL` | `true` | Show the email field |
+| `REGISTER_EMAIL_REQUIRED` | `false` | Make email mandatory |
+| `REGISTER_COLLECT_PHONE` | `true` | Show the phone field |
+| `REGISTER_PHONE_REQUIRED` | `false` | Make phone mandatory |
 | `REGISTER_COLLECT_ADDRESS` | `true` | Show the address section |
 | `REGISTER_ADDRESS_REQUIRED` | `false` | Make the address mandatory |
 | `REGISTER_COLLECT_BIRTHDAY` | `true` | Show the birthday field |

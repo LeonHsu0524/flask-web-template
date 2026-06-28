@@ -341,6 +341,15 @@ def address_ok(addr):
     return bool(addr and addr.get("country") and addr.get("street"))
 
 
+def opt_text(value, collect):
+    """Normalize a simple optional text field: stripped value if collected and
+    non-empty, else None (so a disabled field is never stored)."""
+    if not collect:
+        return None
+    value = (value or "").strip()
+    return value or None
+
+
 @bp.app_context_processor
 def _inject_today():
     """Expose today's date (ISO) to templates, e.g. the birthday picker's max."""
@@ -378,6 +387,13 @@ def api_register():
     linked_userid = data.get("linked_userid")
 
     cfg = current_app.config
+    email = opt_text(data.get("email"), cfg["REGISTER_COLLECT_EMAIL"])
+    if cfg["REGISTER_COLLECT_EMAIL"] and cfg["REGISTER_EMAIL_REQUIRED"] and not email:
+        return jsonify({"message": "Email is required", "status": "fail"}), 400
+    phone = opt_text(data.get("phone"), cfg["REGISTER_COLLECT_PHONE"])
+    if cfg["REGISTER_COLLECT_PHONE"] and cfg["REGISTER_PHONE_REQUIRED"] and not phone:
+        return jsonify({"message": "Phone is required", "status": "fail"}), 400
+
     address = build_address(data) if cfg["REGISTER_COLLECT_ADDRESS"] else None
     if cfg["REGISTER_COLLECT_ADDRESS"] and cfg["REGISTER_ADDRESS_REQUIRED"] and not address_ok(address):
         return jsonify({"message": "Address is required", "status": "fail"}), 400
@@ -392,8 +408,8 @@ def api_register():
         user = SystemUser(
             username=username,
             name=data.get("name"),
-            email=data.get("email"),
-            phone=data.get("phone"),
+            email=email,
+            phone=phone,
             linked_userid=linked_userid,
             role=role,
             address=address,
@@ -435,8 +451,6 @@ def web_register_action():
     name = request.form.get("name")
     password = request.form.get("password")
     confirm_password = request.form.get("confirm_password")
-    email = request.form.get("email")
-    phone = request.form.get("phone")
 
     role = "user"
 
@@ -448,6 +462,13 @@ def web_register_action():
         return render_template("register.html", error="該帳號已被使用")
 
     cfg = current_app.config
+    email = opt_text(request.form.get("email"), cfg["REGISTER_COLLECT_EMAIL"])
+    if cfg["REGISTER_COLLECT_EMAIL"] and cfg["REGISTER_EMAIL_REQUIRED"] and not email:
+        return render_template("register.html", error="請填寫 Email")
+    phone = opt_text(request.form.get("phone"), cfg["REGISTER_COLLECT_PHONE"])
+    if cfg["REGISTER_COLLECT_PHONE"] and cfg["REGISTER_PHONE_REQUIRED"] and not phone:
+        return render_template("register.html", error="請填寫電話")
+
     address = build_address(request.form) if cfg["REGISTER_COLLECT_ADDRESS"] else None
     if cfg["REGISTER_COLLECT_ADDRESS"] and cfg["REGISTER_ADDRESS_REQUIRED"] and not address_ok(address):
         return render_template("register.html", error="請填寫地址（至少國家與詳細地址）")

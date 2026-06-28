@@ -57,6 +57,33 @@ def test_birthday_rejects_future_or_malformed(client, app):
         "username": "gail2", "password": "secret1", "birthday": "not-a-date"}).status_code == 400
 
 
+def test_email_required_rejects_when_missing(client, app):
+    app.config["REGISTER_EMAIL_REQUIRED"] = True
+    assert client.post("/api/register", json={
+        "username": "noemail", "password": "secret1"}).status_code == 400
+    assert client.post("/api/register", json={
+        "username": "hasemail", "password": "secret1", "email": "a@b.com"}).status_code == 201
+
+
+def test_phone_required_rejects_when_missing(client, app):
+    app.config["REGISTER_PHONE_REQUIRED"] = True
+    assert client.post("/api/register", json={
+        "username": "nophone", "password": "secret1"}).status_code == 400
+
+
+def test_collect_off_ignores_email_phone(client, app):
+    app.config["REGISTER_COLLECT_EMAIL"] = False
+    app.config["REGISTER_EMAIL_REQUIRED"] = True   # ignored because collect is off
+    app.config["REGISTER_COLLECT_PHONE"] = False
+    r = client.post("/api/register", json={
+        "username": "ivy", "password": "secret1", "email": "x@y.com", "phone": "0900"})
+    assert r.status_code == 201
+    from models import SystemUser
+    with app.app_context():
+        u = SystemUser.query.filter_by(username="ivy").first()
+        assert u.email is None and u.phone is None
+
+
 def test_collect_off_ignores_address(client, app):
     app.config["REGISTER_COLLECT_ADDRESS"] = False
     app.config["REGISTER_ADDRESS_REQUIRED"] = True  # ignored because collect is off

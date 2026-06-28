@@ -99,20 +99,26 @@
                 <input type="password" name="confirm_password" required placeholder="請再次輸入密碼">
             </div>
 
+            {% if config.REGISTER_COLLECT_EMAIL %}
             <div class="form-group">
-                <label>Email <span class="optional"></span></label>
-                <input type="email" name="email" placeholder="example@mail.com">
+                <label>Email {% if not config.REGISTER_EMAIL_REQUIRED %}<span class="optional">選填</span>{% endif %}</label>
+                <input type="email" name="email" placeholder="example@mail.com"
+                       {{ 'required' if config.REGISTER_EMAIL_REQUIRED }}>
             </div>
+            {% endif %}
 
             <div class="form-group">
                 <label>名字 <span class="optional"></span></label>
                 <input type="text" name="name" required placeholder="請輸入檢測帳號">
             </div>
 
+            {% if config.REGISTER_COLLECT_PHONE %}
             <div class="form-group">
-                <label>電話 <span class="optional"></span></label>
-                <input type="text" name="phone" placeholder="09xx-xxx-xxx">
+                <label>電話 {% if not config.REGISTER_PHONE_REQUIRED %}<span class="optional">選填</span>{% endif %}</label>
+                <input type="text" name="phone" placeholder="09xx-xxx-xxx"
+                       {{ 'required' if config.REGISTER_PHONE_REQUIRED }}>
             </div>
+            {% endif %}
 
             {% if config.REGISTER_COLLECT_BIRTHDAY %}
             <div class="form-group">
